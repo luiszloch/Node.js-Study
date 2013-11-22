@@ -65,6 +65,31 @@ function handle_list_albums(req, res){
 
 // implement function load_album
 
+function load_album(album_name, callback){
+	
+	// we will just assume that any drectory is our 'albums'
+	// subfolder is an album.
+	
+	fs.readdir(
+		"albums/" + album_name,
+		function (err, files){
+			if(err) {
+				if (err.code == "ENOENT"){
+					callback(no_such_album());
+				} else {
+					callback(make_error("file_error", JSON.stringify(err)));
+				}
+				return;
+			}
+			
+			
+			
+		}
+	);
+	
+}
+
+
 function handle_get_album(req, res) {
 	
 	// format of request is /albums/album_name.json
