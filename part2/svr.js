@@ -82,7 +82,7 @@ function handle_get_albums_list(req, res){
 	);
 }
 
-function load_album(album_name, callback){
+function load_album(page_num, page_size, album_name, callback){
 	console.log("Loading contents for album '" + album_name + "'.");
 	
 	fs.readdir(
@@ -93,10 +93,12 @@ function load_album(album_name, callback){
 				callback(err);
 				return;
 			}
+			var max_files = page_num * page_size;
+			var photo_counter = 0;
 			var photos = [];
 			
 			(function iterator(index){
-				if(index == files.length){
+				if(index == files.length || photo_counter == max_files){
 					callback(null, photos);
 					return;
 				}
@@ -112,6 +114,7 @@ function load_album(album_name, callback){
 							if(files[index].substr(files[index].length - 4, files[index].length) == ".jpg"){
 								var obj = { photo: files[index] };
 								photos.push(obj);
+								photo_counter ++;
 							}
 						}
 						iterator(index + 1);
@@ -123,10 +126,22 @@ function load_album(album_name, callback){
 }
 
 function handle_get_album_content(req, res){
-	var album_name = req.url.substr(8, req.url.length - 13);
+	var pathname = url.parse(req.url,true,false).pathname; // '/albums/italy.json'
+	var page_num = url.parse(req.url,true,false).query.page; // 1
+	var page_size = url.parse(req.url,true,false).query.page_size; // 20
+	var album_name = pathname.substr(8, pathname.length - 13); 
+	
+	/* Alternative way to get query paramenters: 
+	 * var parsed_query = url.parse(req.url,true,false).query;
+	 * var page_num_alt = parsed_query.page ? parsed_query.page : 0;
+	 * console.log(page_num_alt); 
+	 */
+	
 	console.log("Handling request to load content for album '" + album_name + "'." );
 	
 	load_album(
+		page_num,
+		page_size,
 		album_name,
 		function(err, contents){
 			if(err){
@@ -139,23 +154,21 @@ function handle_get_album_content(req, res){
 				send_failure(res, 500, "Request could not be completed");
 				return;
 			}
-			var obj = {list: contents};
-			send_success(res, obj);
+			var page_count = Math.ceil(contents.length / page_size);
+			var view = [];
+			for (var i = 0; i < page_count; i++){
+				var page_content = [];
+				page_content = contents.slice(page_size * i, page_size * (i + 1));
+				var obj = {page: page_content};
+				view.push(obj); 
+			}
+			send_success(res, view);
 		}
 	);
 }
 
 function handle_incoming_requests(req, res){
-	
-	console.log(url.parse(req.url,true,false));
-	
-	var pathname = url.parse(req.url,true,false)[3];
-	console.log(pathname);
-	
-	/* var pathname = url.parse.pathname(req.url); // '/albums/italy.json'
-	var search = url.parse.search(req.url); // '?page=1'
-	var query = url.parse.query(req.url); // 'page=1'*/
-	
+	var pathname = url.parse(req.url,true,false).pathname; // '/albums/italy.json'
 	console.log("INCOMING REQUEST TO: " + req.method + " " + pathname);
 	
 	if(pathname == "/albums.json"){
@@ -180,5 +193,5 @@ function handle_incoming_requests(req, res){
 	}
 }
 
-var svr = http.createServer(handle_incoming_requests).listen(8080);
+var svr = http.createServer(handle_incoming_requests).listen(8888);
 
