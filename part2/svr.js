@@ -93,13 +93,18 @@ function load_album(page_num, page_size, album_name, callback){
 				callback(err);
 				return;
 			}
-			var max_files = page_num * page_size;
-			var photo_counter = 0;
+			// var max_files = page_num * page_size;
+			// var photo_counter = 0;
 			var photos = [];
 			
 			(function iterator(index){
-				if(index == files.length || photo_counter == max_files){
-					callback(null, photos);
+				if(index == files.length){
+					var ps;
+					// slice fails gracefully if params are out of range
+					ps = photos.splice(page_num * page_size, page_size);
+					var obj = { short_name: album_name,
+								photos: ps };
+					callback(null, obj);
 					return;
 				}
 				fs.stat(
@@ -114,7 +119,6 @@ function load_album(page_num, page_size, album_name, callback){
 							if(files[index].substr(files[index].length - 4, files[index].length) == ".jpg"){
 								var obj = { photo: files[index] };
 								photos.push(obj);
-								photo_counter ++;
 							}
 						}
 						iterator(index + 1);
@@ -131,6 +135,11 @@ function handle_get_album_content(req, res){
 	var page_size = url.parse(req.url,true,false).query.page_size; // 20
 	var album_name = pathname.substr(8, pathname.length - 13); 
 	
+	if (isNaN(parseInt(page_num))) page_num = 0;
+	if (isNaN(parseInt(page_size))) page_size = 100;
+	
+	console.log("page_num: " + page_num);
+	
 	/* Alternative way to get query paramenters: 
 	 * var parsed_query = url.parse(req.url,true,false).query;
 	 * var page_num_alt = parsed_query.page ? parsed_query.page : 0;
@@ -144,25 +153,16 @@ function handle_get_album_content(req, res){
 		page_size,
 		album_name,
 		function(err, contents){
-			if(err){
-				if(err.code == 404){
-					console.log("Sending failure response as album could not be found...");
-					send_failure(res, 404, "Album could not be found.");
-					return;
-				}
+			if(err && err.code == 404){
+				console.log("Sending failure response as album could not be found...");
+				send_failure(res, 404, "Album could not be found.");
+			} else if (err && err.code == 500){
 				console.log("Sending failure response as request for album '" + album_name + "' could not be completed...");
 				send_failure(res, 500, "Request could not be completed");
-				return;
+			} else {
+				var obj = { album_contents: contents };
+				send_success(res, obj);
 			}
-			var page_count = Math.ceil(contents.length / page_size);
-			var view = [];
-			for (var i = 0; i < page_count; i++){
-				var page_content = [];
-				page_content = contents.slice(page_size * i, page_size * (i + 1));
-				var obj = {page: page_content};
-				view.push(obj); 
-			}
-			send_success(res, view);
 		}
 	);
 }
