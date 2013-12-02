@@ -18,14 +18,14 @@ fs = require('fs');
 url = require('url');
 
 function send_failure(res, code, msg){
-	res.writeHead(code, { "content-type": "application/json"});
+	res.writeHead(code, { "Content-Type": "application/json"});
 	var error = { code: code, msg: msg};
 	res.end(JSON.stringify(error) + "\n");
 	console.log("Failure response sent with code " + code + ".");
 }
 
 function send_success(res, obj){
-	res.writeHead(200, {"content-type": "application/json"});
+	res.writeHead(200, {"Content-Type": "application/json"});
 	res.end(JSON.stringify(obj) + "\n");
 	console.log("Success response sent.");
 }
@@ -93,8 +93,6 @@ function load_album(page_num, page_size, album_name, callback){
 				callback(err);
 				return;
 			}
-			// var max_files = page_num * page_size;
-			// var photo_counter = 0;
 			var photos = [];
 			
 			(function iterator(index){
@@ -138,8 +136,6 @@ function handle_get_album_content(req, res){
 	if (isNaN(parseInt(page_num))) page_num = 0;
 	if (isNaN(parseInt(page_size))) page_size = 100;
 	
-	console.log("page_num: " + page_num);
-	
 	/* Alternative way to get query paramenters: 
 	 * var parsed_query = url.parse(req.url,true,false).query;
 	 * var page_num_alt = parsed_query.page ? parsed_query.page : 0;
@@ -167,6 +163,95 @@ function handle_get_album_content(req, res){
 	);
 }
 
+function do_rename (old_album_name, new_album_name, callback){
+
+	fs.rename(
+		"albums/" + old_album_name,
+		"albums/" + new_album_name,
+		callback);
+}
+
+function handle_rename_album(req, res){
+	
+	// 1. Get the album name from the URL
+	var pathname = url.parse(req.url,true,false).pathname; // '.../albums/italy/rename.json'
+	var parts = pathname.split("/");
+	if (parts.length != 4){
+		send_failure(res, 404, "Invalid resource: " + pathname);
+		return;
+	}
+	
+	var album_name = parts[2]; 
+	
+	// 2. Get the POST data for the request. This will have the JSON for the new name for the album.
+	
+	var json_body = '';
+	req.on(
+		'readable',
+		function(){
+			var d = req.read();
+			if(d){
+				if(typeof d == 'string'){
+					json_body += d;
+				} else if (typeof d == 'object' && d instanceof Buffer){
+					json_body += d.toString('utf8');
+				}
+			}
+		}
+	);
+	
+	// 3. When we have all the post data, amke sure we have a valid data and then try to do the rename.
+	
+	req.on(
+		'end',
+		function (){
+			// did we get a valid body?
+			if(json_body){
+				try {
+					var album_data = JSON.parse(json_body);
+					if(!album_data.album_name){
+						// Body came without album name.
+						console.log("JSON without album name.");
+						send_failure(res, 400, "JSON without album name.");
+						return;
+					}
+				} catch (e) {
+					//Got body but not valid JSON
+					console.log("The body is not a valid JSON.")
+					send_failure(res, 400, "The body is not a valid JSON");
+					return;
+				}
+				
+				// 4. Perform rename!
+				
+				do_rename(
+					album_name,				// old
+					album_data.album_name,	// new
+					function (err, results){
+						if(err && err.code == "ENOENT") {
+							console.log("Could not find album " + album_name + ".");
+							send_failure(res, 404, "Could not find album " + album_name);
+							return;
+						}
+						else if(err){
+							console.log("Could not rename album " + album_name + ".");
+							send_failure(res, 500, "Could not rename album " + album_name);
+							return;
+						} 
+						console.log("Album renamed from " + album_name + " to " + album_data.album_name + " successfully.");
+						send_success(res, {status: "Album renamed from " + album_name + " to " + album_data.album_name });
+					}
+				);
+			}
+			else {
+				// didn't get a body
+				console.log("JSON without body." );
+				send_failure(res, 400, "JSON without body.");
+			}
+		}
+	);
+}
+
 function handle_incoming_requests(req, res){
 	var pathname = url.parse(req.url,true,false).pathname; // '/albums/italy.json'
 	console.log("INCOMING REQUEST TO: " + req.method + " " + pathname);
@@ -175,11 +260,15 @@ function handle_incoming_requests(req, res){
 		console.log("Handling request to 'get_albums_list'...");
 		handle_get_albums_list(req, res);
 	}
-	else if(pathname.substr(0,7) == "/albums" && pathname.substr(pathname.length - 5, pathname.length) == ".json"){
+	else if (pathname.substr(pathname.length - 12) == '/rename.json' && req.method.toLowerCase() == 'post'){
+		console.log("Sending request to 'handle_rename_album'");
+		handle_rename_album(req, res);
+	}
+	else if(pathname.substr(0,7) == "/albums" && pathname.substr(pathname.length - 5) == ".json"){
 		console.log("Handling request to 'get_album_content'...");
 		handle_get_album_content(req, res)
 	}
-	else if(pathname.substr(pathname.length - 5, pathname.length) != ".json") {
+	else if(pathname.substr(pathname.length - 5) != ".json") {
 		console.log("Sending failure response as request in not JSON...");
 		send_failure(res, 400, "Request format is invalid. It needs to be JSON.");
 	}
